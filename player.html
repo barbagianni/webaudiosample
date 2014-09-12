@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+</head>
+<body>
+<div id="player"></div>
+<script>
+    window.AudioContext = window.AudioContext || window.webkitAudioContext;
+    var context = new AudioContext();
+
+    var Player = function (el) {
+        this._el = el;
+    };
+
+    Player.prototype = {
+        _el: null,
+        ready: false,
+        onready: null,
+        _source: null,
+        _startTime: null,
+        _resumeAt: 0,
+
+        load: function (url) {
+            this._setupRequestAndDecode(url, this._initializePlayer.bind(this));
+        },
+        play: function () {
+            if (this.ready && !this._source) {
+                this._initializeBufferSource();
+                this._source.onended = this._onEnd.bind(this);
+                // Start playback
+                // http://webaudio.github.io/web-audio-api/#widl-AudioBufferSourceNode-start-void-double-when-double-offset-double-duration
+                this._source.start(0, this._resumeAt);
+                // Real time counter
+                // http://webaudio.github.io/web-audio-api/#widl-AudioContext-currentTime
+                this._startTime = context.currentTime;
+                requestAnimationFrame(this._updateEl.bind(this));
+                this._playing = true;
+            }
+        },
+        pause: function () {
+            this._resumeAt = this._resumeAt + context.currentTime - this._startTime;
+            // Stop playback
+            // http://webaudio.github.io/web-audio-api/#widl-AudioBufferSourceNode-stop-void-double-when
+            this._source.stop();
+            this._source = null;
+        },
+
+        _initializeBufferSource: function () {
+            // Source that reads from a decoded buffer of audio data
+            // http://webaudio.github.io/web-audio-api/#widl-AudioContext-createBufferSource-AudioBufferSourceNode
+            this._source = context.createBufferSource();
+            this._source.buffer = this._buffer;
+            // Connect the source to the actual audio output.
+            // http://webaudio.github.io/web-audio-api/#widl-AudioContext-destination
+            this._source.connect(context.destination);
+        },
+        _setupRequestAndDecode: function (url, callback, errorCallback) {
+            // Get the music by a xhr and decode the data via the web audio context
+            // http://webaudio.github.io/web-audio-api/#widl-AudioContext-decodeAudioData-Promise-AudioBuffer--ArrayBuffer-audioData-DecodeSuccessCallback-successCallback-DecodeErrorCallback-errorCallback
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', url);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = function () {
+                context.decodeAudioData(xhr.response, function(buffer) {
+                    callback(buffer);
+                }, errorCallback || function () {});
+            };
+            xhr.send();
+        },
+        _initializePlayer: function (buffer) {
+            this._buffer = buffer;
+            this.duration = buffer.duration;
+            this.ready = true;
+            if(this.onready) {
+                this.onready();
+            }
+
+        },
+        _onEnd: function () {
+            this._source = null;
+            this._playing = false;
+        },
+        _updateEl: function () {
+            // Calculate the current position within the track and update the display
+            this._el.innerHTML =
+                    this._secondsToMinutesAndSeconds(context.currentTime - this._startTime + this._resumeAt) + '/' +
+                    this._secondsToMinutesAndSeconds(this.duration);
+            if (this._playing) {
+                requestAnimationFrame(this._updateEl.bind(this));
+            }
+        },
+
+        _secondsToMinutesAndSeconds: function (input) {
+            // Calculate the current mm:ss position from the current play position in seconds.
+            var seconds = ((input % 60) | 0) + '';
+            if (seconds.length === 1) {
+                seconds = '0' + seconds;
+            }
+            return Math.floor(input / 60) + ':' + seconds
+        }
+    };
+
+    // Initialize Player with a DOM element to render the current time to.
+    var player = new Player(document.querySelector('#player'));
+    player.onready = function () {
+        // Play after the music has been loaded.
+        this.play();
+    };
+    player.load('LibertyBellMarchRecovered.mp3');
+</script>
+</body>
+</html>
